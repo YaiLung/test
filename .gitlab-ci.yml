@@ -1,0 +1,145 @@
+stages:
+  - build_snapshot
+  - deploy_k8s
+  - cert_manager
+  - apply_letsencrypt
+  - deploy_argo
+  - add_argocd_repo
+  - deploy_planka
+  - deploy
+
+build_snapshot:
+  stage: build_snapshot
+  image: hashicorp/packer:latest
+  before_script:
+    - apk update && apk add curl bash
+  script:
+    - curl -sL "https://raw.githubusercontent.com/kube-hetzner/terraform-hcloud-kube-hetzner/master/packer-template/hcloud-microos-snapshots.pkr.hcl" -o hcloud-microos-snapshots.pkr.hcl
+    - packer init hcloud-microos-snapshots.pkr.hcl
+    - packer build hcloud-microos-snapshots.pkr.hcl
+  when: manual
+
+deploy_k8s:
+  image: hashicorp/terraform:1.10.2
+  stage: deploy_k8s
+  variables:
+    TF_VAR_hcloud_token: "$HCLOUD_TOKEN"
+  before_script:
+    - apk add --no-cache bash
+  script:
+    - cd terraform
+    - terraform init
+    - terraform apply -auto-approve
+    - terraform output --raw kubeconfig > k3s_kubeconfig.yaml
+    - ls -lF
+    - pwd
+  cache:
+    key: files
+    paths:
+      - terraform/.terraform
+      - terraform/k3s_kustomization_backup.yaml
+      - terraform/.terraform.lock.hcl
+  artifacts:
+    paths:
+      - terraform/k3s_kubeconfig.yaml
+
+cert_manager:
+  stage: cert_manager
+  image: alpine/k8s:1.29.13
+  dependencies:
+    - deploy_k8s
+  variables:
+    KUBECONFIG: $CI_PROJECT_DIR/terraform/k3s_kubeconfig.yaml
+  script:
+    - helm repo add jetstack https://charts.jetstack.io
+    - helm repo update
+    - |
+      helm upgrade --install cert-manager jetstack/cert-manager \
+        --namespace cert-manager \
+        --create-namespace \
+        --set crds.enabled=true \
+        --set resources.requests.cpu=50m \
+        --set resources.requests.memory=64Mi \
+        --set resources.limits.cpu=200m \
+        --set resources.limits.memory=128Mi
+    - kubectl apply -f letsencrypt/letsencrypt-issuer.yaml
+    - helm repo add argo https://argoproj.github.io/argo-helm
+    - helm repo update
+    - helm upgrade --install argocd argo/argo-cd --namespace argocd --create-namespace -f argocd/values.yaml
+  when: manual
+
+deploy_argocd:
+  stage: deploy_argo
+  image: alpine/k8s:1.29.13
+  dependencies:
+    - deploy_k8s
+  variables:
+    KUBECONFIG: $CI_PROJECT_DIR/terraform/k3s_kubeconfig.yaml
+  script:
+    - helm repo add argo https://argoproj.github.io/argo-helm
+    - helm repo update
+    - helm upgrade --install argocd argo/argo-cd --namespace argocd --create-namespace -f argocd/values.yaml
+  when: manual
+
+add_argocd_repo:
+  stage: add_argocd_repo
+  image: argoproj/argocd:latest
+  dependencies:
+    - deploy_k8s
+  variables:
+    KUBECONFIG: $CI_PROJECT_DIR/terraform/k3s_kubeconfig.yaml
+  script:
+    - argocd login $ARGOCD_SERVER --username $ARGOCD_USERNAME --password $ARGOCD_PASSWORD --insecure
+    - echo "$ARGO_SSH_PRIVATE_KEY_B64" | base64 -d > id_rsa
+    - chmod 600 id_rsa
+    - argocd repo add ssh://git@gitlab.9qw.ru/9qw/romtk3s.git --ssh-private-key-path $(pwd)/id_rsa  --insecure-skip-server-verification
+    - echo "$LANDING_SSH_PRIVATE_KEY_B64" | base64 -d > id_rsa
+    - chmod 600 id_rsa
+    - argocd repo add git@gitlab.as12as.com:asg/landing-deploy.git --ssh-private-key-path $(pwd)/id_rsa  --insecure-skip-server-verification --upsert
+  when: manual
+
+deploy_planka:
+  stage: deploy
+  image: alpine/k8s:1.29.13
+  dependencies:
+    - deploy_k8s
+    - add_argocd_repo
+  variables:
+    KUBECONFIG: $CI_PROJECT_DIR/terraform/k3s_kubeconfig.yaml
+  script:
+    - kubectl get ns planka || kubectl create namespace planka
+    - >
+      kubectl create secret generic planka-admin-creds
+      --from-literal=username=stufently
+      --from-literal=password=$PLANKA_ADMIN_PASSWORD
+      --namespace planka
+      --dry-run=client -o yaml | kubectl apply -f -
+    - >
+      kubectl create secret generic planka-postgresql-secret
+      --from-literal=postgres-username=planka
+      --from-literal=postgres-password=$PLANKA_POSTGRESQL_PASSWORD
+      --namespace planka
+      --dry-run=client -o yaml | kubectl apply -f -
+    - kubectl apply -f planka/planka-application.yaml
+  when: manual
+
+deploy_landing:
+  stage: deploy
+  image: alpine/k8s:1.29.13
+  dependencies:
+    - deploy_k8s
+  variables:
+    KUBECONFIG: $CI_PROJECT_DIR/terraform/k3s_kubeconfig.yaml
+  script:
+    - kubectl get ns landing || kubectl create namespace landing
+    - |
+      kubectl create secret docker-registry regcred \
+      --docker-server=gitlab.as12as.com:4567 \
+      --docker-username=$LANDING_REGISTRY_USER \
+      --docker-password=$LANDING_REGISTRY_PASSWORD \
+      --docker-email=stufently@gmail.com \
+      --namespace landing \
+      --dry-run=client -o yaml | kubectl apply -f -
+    - kubectl apply -f landing/landing-deploy.yml
+  when: manual
+
