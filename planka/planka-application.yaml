@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: planka
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: 'http://plankanban.github.io/planka'
+      chart: planka
+      targetRevision: "0.2.20"  # Используемая версия чарта
+      helm:
+        valueFiles:
+          - $values/planka/values.yaml
+    # Источник с кастомными values из GitLab по SSH
+    - repoURL: 'ssh://git@gitlab.9qw.ru/9qw/romtk3s.git'
+      targetRevision: main
+      ref: values
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: planka
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

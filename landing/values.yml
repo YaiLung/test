@@ -1,0 +1,10 @@
+host: landing.romtk3s.8qw.ru
+
+env:
+  railsEnv: "production"
+  sqliteDatabase: "/app/storage/development.sqlite3"
+  baseApi: "https://api.adspyglass.com/api/v1"
+  asgApp: "https://app.adspyglass.com"
+  captchaKey: "6LdAGcYlAAAAAB4c3Kv83iTpStUNEEg9gsEoOy0s"
+  railsMasterKey: "2a7cef3d3bc448942d59238cf14b8184"
+

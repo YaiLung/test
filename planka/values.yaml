@@ -1,0 +1,75 @@
+#openssl rand -hex 64
+secretkey: "188c27a9c0c78f2428a1e45563416f1c4903db0ec788cfe0a07624682f01fd9f17cd0cdca3efee6777aa69d38a6f32497475b691a5ca16c67812d03ee41d8413"
+# The admin section needs to be present for new instances of Planka, after the first start you can remove the lines starting with admin_. 
+#If you want the admin user to be unchangeable admin_email: has to stay
+# After changing the config you have to run ```helm upgrade  planka . -f values.yaml```
+
+# Admin user
+admin_email: "stufently@gmail.com" # Do not remove if you want to prevent this user from being edited/deleted
+admin_password: "45gf3qryh546gf45g76"
+admin_name: "stufently"
+admin_username: "stufently"
+# Admin user
+
+baseUrl: "https://planka.8qw.ru"
+
+existingAdminCredsSecret: "planka-admin-creds"
+
+service:
+  type: ClusterIP
+  port: 1337
+
+
+ingress:
+  enabled: true
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+  hosts:
+    - host: planka.8qw.ru
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+
+# Needed for HTTPS
+  tls:
+   - secretName: planka-tls # existing TLS secret in k8s
+     hosts:
+       - planka.8qw.ru
+
+postgresql:
+  enabled: true
+  auth:
+    database: planka
+    username: planka
+    password: "VSqTzX0C4L8FfV"
+    postgresPassword: "W3AnSeppEuF5ea"
+    replicationPassword: "6vZl5FSTuveeg7"
+    #existingSecret: planka-postgresql
+  serviceBindings:
+    enabled: true
+
+
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+
+persistence:
+  enabled: true
+  storageClass: "hcloud-volumes"
+  accessMode: ReadWriteOnce
+  size: 29Gi

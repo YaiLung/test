@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: landing
+  namespace: argocd
+spec:
+  destination:
+    namespace: landing
+    server: https://kubernetes.default.svc
+  sources:
+    - repoURL: git@gitlab.as12as.com:asg/landing-deploy.git
+      path: landing-chart
+      targetRevision: main
+      helm:
+        valueFiles:
+          - $valuesRepo/landing/values.yml
+    - repoURL: git@gitlab.9qw.ru:9qw/romtk3s.git
+      targetRevision: main
+      ref: valuesRepo
+  project: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

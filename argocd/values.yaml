@@ -1,0 +1,49 @@
+global:
+  domain: argocd.romtk3s.8qw.ru
+
+server:
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hostname: argocd.romtk3s.8qw.ru
+    annotations:
+      kubernetes.io/ingress.class: nginx
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+      nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+      nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+
+    tls:
+      - hosts:
+          - argocd.romtk3s.8qw.ru
+        secretName: argocd-server-tls
+
+
+
+controller:
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+repoServer:
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+applicationSet:
+  enabled: true
+
+rbacConfig:
+  policy.default: role:readonly
+  scopes: "[groups]"
+
+configs:
+  secret:
+    argocdServerAdminPassword: "$2a$10$XV3YftotydMfuLaBp6nzG.QLIBrc0MbmP/yOg0v6aXaglUddO12Mm"
